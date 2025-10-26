@@ -1,0 +1,248 @@
+L'objectif est de générer une page web tout en un (html + css + js), dans un fichier unique, qui va assister un rédacteur humain pour rédiger une composition en respectant une méthode étape par étape. Cette page web fera des appels à l'IA à chaque étape (API de Mistral AI).
+
+Une structure de données JSON va servir de colonne vertébrale à ce processus :
+-	L'interface graphique sera le reflet de cette structure de données JSON et permettra d'éditer les données simplement.
+-	L'appel à l'IA est réalisé avec un prompt qui correspond à la concaténation d'un prompt de méthode de composition auquel est ajouté la structure de données JSON avec son état de remplissage.
+-	La réponse de l'IA se fait au format de cette structure de données JSON pour pouvoir mettre à jour les données dans l'interface graphique.
+
+Ce processus est déclenché par l'utilisateur de la page web. Il est répété autant de fois qu'il y a d'étapes, permettant ainsi de progressivement remplir le JSON jusqu'à ce que la composition soit complètement générée.
+
+Les 5 top-level properties de la structure de donnée JSON sont : sujet, sujet cadré, réflexions, plan, composition.
+Les 4 étapes sont : cadrage du sujet, réflexion, planification, rédaction.
+
+
+# Structure de la page web
+
+Le titre de la page est composition. Le titre est suffixé d'un asterisque si les données JSON ont changées depuis le dernier export.
+
+En haut de la page web, il y par un bandeau sur une ligne comprenant 2 boutons pour l'import et l'export du fichier JSON, 4 boutons permettant de lancer la réalisation de chacune des 4 étapes, et un bouton magique permettant de lancer les 4 étapes séquentiellement. Ce bandeau reste visible malgré le défilement verticale (sticky).
+
+Le bouton import ne comporte que le caractère I. Le bouton export ne comporte que le caractère E. Le bouton magique doit comporter un émoticone baguette magique.
+
+Les 4 boutons permettant de lancer la réalisation de chacune des 4 étapes doit avoir plusieurs états : pas encore disponible, prêt à cliquer, requête en cours, réponse obtenue. La première étape nécessite que la première top-level properties soit renseigné. Ainsi, au début, tous les boutons sont dans l'état pas encore disponible ; dès que l'utilisateur a entré un sujet, le premier bouton passe dans l'état prêt à cliquer. En règle générale, l'étape N nécessite que les N premiers top-level properties soient renseignés.
+
+La zone principale de la page web comprend une structure avec tous les champs éditables. La structure de la page web doit refléter précisément la structure du données JSON. Le nombre de champs est variable pour les arrays, par exemple, dans réflexion/faits, il y a une liste de faits (array de string) dont la longueur peut varier. Il faut donc un mécanisme pour ajouter supprimer un champ dans cette liste. Autre exemple, le nombre d'idées directrices est compris entre 2 et 4 (array d'objet). Il faut que ce mécanisme permette d'ajouter ou de retirer une partie sachant qu'une partie est un objet comprenant plusieurs champs. Avant la complétion, les arrays doivent avoir au moins un élément vide.
+
+A la suite, il y a une zone éditable pour les prompts permettant de compléter le JSON et pour chaque étape.
+
+Tout en bas, de page, pour des raisons de déboguage, il faudra un champ avec le dernier message envoyé et un champ avec le dernier message reçu.
+
+
+# Raccourcis clavier
+
+ctrl + E : permet d'exporter le fichier JSON
+ctrl + I : permet d'exporter le fichier JSON
+
+ctrl + 1 : lance l'étape 1
+ctrl + 2 : lance l'étape 2
+ctrl + 3 : lance l'étape 3
+ctrl + 4 : lance l'étape 4
+
+
+# Structure de données JSON
+
+{
+  "sujet": "bla bla",
+  "sujet cadré": "bla bla bli",
+  "réflexions": {
+    "faits": [
+      "fait A",
+      "fait B",
+      "fait C",
+      "fait D"
+    ],
+    "problématiques": [
+      "pb 1",
+      "pb 2",
+      "pb 3"
+    ],
+    "idées": [
+      "idée a",
+      "idée b",
+      "idée c"
+    ]
+  },
+  "plan": {
+    "accroche": "bli bli",
+    "idée maîtresse": "bla lorem",
+    "idées directrices": [
+      {
+        "ID": "aaa",
+        "idées secondaires": [
+          {
+            "IS": "titi",
+            "exemple": "toto"
+          },
+          {
+            "IS": "titi",
+            "exemple": "toto"
+          },
+          {
+            "IS": "titi",
+            "exemple": "toto"
+          }
+        ]
+      },
+      {
+        "ID": "aaa",
+        "idées secondaires": [
+          {
+            "IS": "titi",
+            "exemple": "toto"
+          },
+          {
+            "IS": "titi",
+            "exemple": "toto"
+          },
+          {
+            "IS": "titi",
+            "exemple": "toto"
+          }
+        ]
+      },
+      {
+        "ID": "aaa",
+        "idées secondaires": [
+          {
+            "IS": "titi",
+            "exemple": "toto"
+          },
+          {
+            "IS": "titi",
+            "exemple": "toto"
+          },
+          {
+            "IS": "titi",
+            "exemple": "toto"
+          }
+        ]
+      }
+    ],
+    "ouverture": "ipsum"
+  },
+  "composition": "lorem ipsum"
+}
+
+# Requête API
+
+La requête API est déclenchée par un bouton, ou le raccourci clavier qui correspond à l'une des 4 étapes de la composition.
+
+La requête API comporte un prompt d'aide à la composition que la page web devra reconstruire en fonction de l'étape à exécuter :
+
+-	Pour l'étape N, les données du JSON qui correspondent à une top-level properties supérieure ou égal à N+1 seront supprimés pour faire la place à la réponse attendue, mais la structure complète de données doit perdurer (le JSON contient toujours 5 top-leverl properties dont N avec des données et 5-N avec des données vides), en particulier les array qui contiennent des champs texte doivent être réduits à un élément avec une chaine de caractère vide, les array qui contiennent des objets doit contenir au moins un objet complet.
+-	La première partie du prompt est le texte qui est présent dans la section : Début de prompt pour compléter le JSON
+-	La deuxième partie du prompt se trouve dans l'une des sections suivantes selon l'étape considérée : Continuation du prompt pour l'étape N
+-	La troisième partie du prompt est le JSON intégralement présent.
+
+# Traitement de la réponse
+
+L'IA fournie une réponse au format JSON. Que la réponse soit encadrée par : ```json         ``` ou non, les données doivent être correctement interprétées.
+
+# Style et thème la page web
+
+La page adopte un thème sombre. La couleur de contrast est un bleu turquoise. Les boutons supprimer sont discrets.
+
+La largeur des champs texte doit s'adapter à la largeur de la page. Les champs texte font 2 lignes sauf, le sujet cadré, l'idée maîtresse, les idées directrices, les idées secondaires qui font 4 lignes.
+
+
+# Extrait de code pour l'appel à l'API de Mistral AI
+
+L'appel à l'API de Mistral AI se fait par l'intermédiaire d'un serveur local. Voici un morceau de code qui permet d'envoyer une requête et d'en extraire la réponse :
+
+try {
+	const response = await fetch('http://localhost:3000/api/prompt', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ prompt })
+	});
+
+	if (!response.ok) {
+		throw new Error(`Erreur HTTP : ${response.status}`);
+	}
+
+const data = await response.json();
+responseDiv.textContent = data.choices[0].message.content;
+
+
+# Début de prompt pour compléter le JSON
+
+Vous assistez un rédacteur dans la création d’une composition en 4 étapes. Votre mission est de compléter une seule propriété de premier niveau du JSON fourni, sans modifier les autres.
+
+Les 5 top-level properties du JSON sont : sujet, sujet cadré, réflexions, plan, composition.
+Les 4 étapes sont : cadrage du sujet, réflexion, planification, rédaction.
+
+Consignes absolues :
+	Conservez la structure JSON existante dans son intégralité (clés, valeurs, ordre).
+	Ne complétez que la propriété de premier niveau liée à l’étape demandée.
+Format strict :
+	Pas de mise en forme dans le texte généré (pas de Markdown, pas de sauts de ligne inutiles).
+	Respectez les types de données existants (string, array, object).
+	Ne supprimez ni ne modifiez les autres propriétés.
+
+
+# Continuation du prompt pour l'étape 1
+
+Etape 1 : Cadrage du sujet
+
+Input : sujet
+Output : sujet cadré
+Objectif :
+L'objectif est de reformuler le sujet en ayant bien identifié de quoi il s'agit et de comprendre le cadre applicable qui peut être sous-entendu. Le sujet cadré doit :
+-	préciser le domaine et le cadre général ;
+-	reformuler afin de clarifier le sens des mots si plusieurs interprétations sont possibles (lever l'ambiguïté des termes polysémiques) ;
+-	définir les limites géographiques, temporelles, et thématiques.
+Contraintes : Conserver la structure syntaxique du sujet original (interrogative ou affirmative).
+Eviter tout détour énonciatif.
+Longueur d'une phrase ou deux.
+Format : Respecter strictement le format JSON pour la propriété "sujet cadré" (texte brut).
+
+
+# Continuation du prompt pour l'étape 2
+
+Etape 2 : Réflexion
+
+Input : sujet, sujet cadré
+Output : réflexions
+Objectif : L'étape de réflexion a pour but de lister des faits, des problématiques et des idées en lien avec le sujet.
+Les faits ne doivent refléter que la réalité et ne pas intégrer de biais ou de parti pris. Ils doivent être datés, localisés et chiffrés dans la mesure du possible. Des citations célèbres peuvent être insérées dans cette liste. La rédaction étant en français, la répartition entre faits français et étranger doit être approximativement de 50 %. Les exemples étrangers doivent balayer une large part du reste du monde, sans exclure aucune grande région ou grande époque de l'Histoire. La liste de faits doit comprendre au moins 20 éléments. 
+Les problématiques permettent par les questions posées d'élargir le champ de réflexion en questionnant chaque aspect du sujet, en variant le lieu ou l'époque, l'angle sous lequel il est abordé, en questionnant les intérêts des autres acteurs, les causes et les conséquences des faits, et en mettant en lumière les enjeux. La liste de problématiques doit comprendre au moins 12 éléments. 
+Les idées élémentaires permettent de proposer des idées liées au sujet dont l'ampleur va de l'idée secondaire à l'idée maîtresse. La certitude des idées doit pouvoir aller de l'affirmation établie aux hypothèses crédibles (débattue mais étayées), mais sans jamais aller du côté des affirmations indémontrables ou des avis purement personnels. Il faut inclure des idées créatives ou originales. Il n'y a pas de contrainte sur la cohérence globale entre les idées, tant que chaque idée est individuellement argumentable.
+La liste d'idées élémentaires doit comprendre au moins 20 éléments.
+Format : Suivre strictement le format JSON de la top-level property réflexions composé de trois arrays de texte.
+
+# Continuation du prompt pour l'étape 3
+
+Etape 3 : Planification
+
+Input : sujet, sujet cadré, réflexions
+Output : plan
+Objectif : L'étape de planification, ou de réalisation du plan détaillé doit permettre de hiérarchiser les idées pour en dégager une idée maîtresse qui sera appuyée par des idées directrices, elles-mêmes soutenues par des idées secondaires qui seront illustrées par des exemples. C'est aussi l'occasion de choisir une accroche et une ouverture. Le cheminement des idées doit être logique. Le plan est composé de plusieurs parties, entre 2 et 4, chacune soutenant une idée directrice. Chaque partie est décomposée en plusieurs idées secondaires, de 2 à 4 idées secondaires. Chaque idée secondaire est illustrée par au moins un exemple.
+L'accroche doit éveiller la curiosité en s'appuyant sur un fait saillant ou une citation en lien avec l'idée maîtresse.
+L'ouverture doit permettre de s'interroger sur un autre aspect connexe, non traité dans le développement, sans repartir sur un nouveau sujet.
+Contraintes : 
+Ordonner les idées selon une progression logique (chronologique, thématique, causale, etc.) pour assurer fluidité et transitions naturelles.
+Equilibrer entre les parties. Chaque partie est sémantiquement orthogonale aux autres sur au moins un aspect majeur tout en restant cohérente avec l'idée maîtresse.
+Ne pas numéroter les idées.
+Un exemple par idée secondaire.
+Reprendre au moins la moitié des idées et la moitié des exemples formulées dans réflexions.
+Format : Suivre strictement le format JSON de la top-level property plan. 
+
+
+# Continuation du prompt pour l'étape 4
+
+Etape 4 : Rédaction
+
+Input : sujet, sujet cadré, réflexions, plan
+Output : composition
+Objectif : Rédiger la composition.
+La structure de la composition, tel que l'introduction, le développement et ses parties, et la conclusion transparait grâce aux paragraphes et aux retours à la ligne.
+L'introduction comprend une accroche, le sujet reformulé, l'idée maîtresse, et l'annonce du plan. L'introduction forme un paragraphe.
+Le développement comprend 2 à 4 parties, autant que d'idées directrices. Chaque partie commence par l'énoncé de l'idée directrice, un développement de partie et une transition. Le développement de partie comprend 2 à 4 idées secondaires étayées par leur exemple. Le développement comprend plusieurs paragraphes, autant que de partie. Dans le paragraphe que forme chaque partie, un retour à la ligne permet de marquer le début de chaque idée secondaire.
+La conclusion comprend un résumé de l'argumentation, la réponse à la question posée ou un résumé de l'idée maîtresse et une ouverture. La conclusion forme un paragraphe.
+Contraintes :
+Le style doit être clair et épuré. Le vocabulaire doit être riche et utilisé précisément. La complexité syntaxique ne doit servir que pour mieux exprimer des idées complexes.
+Format : Suivre strictement le format JSON de la top-level property composition qui est un simple texte. La forme de la composition n'est donc que du texte. La composition fait 1000 mots. Les sauts de ligne doivent être échappés (\n).
+
+

@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistant de Composition</title>
+    <style>
+        :root {
+            --bg-dark: #121212;
+            --bg-light: #1e1e1e;
+            --text: #e0e0e0;
+            --primary: #00bcd4;
+            --primary-dark: #0097a7;
+            --error: #d32f2f;
+            --success: #388e3c;
+            --border: #444;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+        .sticky-banner {
+            position: sticky;
+            top: 0;
+            background-color: var(--bg-light);
+            padding: 10px 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        button {
+            background-color: var(--bg-light);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: bold;
+        }
+        button:hover:not(:disabled) {
+            background-color: var(--primary-dark);
+            color: white;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        button.loading {
+            position: relative;
+            color: transparent;
+        }
+        button.loading::after {
+            content: "";
+            position: absolute;
+            width: 1em;
+            height: 1em;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            margin: auto;
+            border: 0.125em solid transparent;
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s ease infinite;
+        }
+        button.done {
+            background-color: var(--success);
+            color: white;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .section {
+            background-color: var(--bg-light);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+        }
+        .section-title {
+            color: var(--primary);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+        }
+        textarea, input {
+            width: 100%;
+            background-color: var(--bg-dark);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.5em;
+            resize: vertical;
+            height: 1.1em;
+            overflow-y: hidden;
+        }
+        .array-item {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: flex-start;
+        }
+        .array-item textarea {
+            flex: 1;
+        }
+        .array-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .array-controls button {
+            padding: 5px 10px;
+            font-size: 0.8em;
+        }
+        .remove-btn {
+            background-color: var(--error);
+            color: white;
+            padding: 0 8px;
+            height: fit-content;
+        }
+        .remove-btn:hover {
+            background-color: #b71c1c;
+        }
+        .debug {
+            background-color: var(--bg-dark);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 30px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .debug-title {
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+        .prompt-section {
+            margin-top: 30px;
+        }
+        .prompt-section textarea {
+            font-family: monospace;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="sticky-banner">
+        <button id="importBtn" title="Importer JSON">I</button>
+        <button id="exportBtn" title="Exporter JSON">E</button>
+        <button id="step1Btn" disabled>1. Cadrage du sujet</button>
+        <button id="step2Btn" disabled>2. Réflexion</button>
+        <button id="step3Btn" disabled>3. Planification</button>
+        <button id="step4Btn" disabled>4. Rédaction</button>
+        <button id="magicBtn" title="Lancer toutes les étapes" disabled>🪄</button>
+    </div>
+    <div class="container">
+        <div class="section">
+            <div class="section-title">Sujet</div>
+            <textarea id="sujet" placeholder="Entrez le sujet ici..."></textarea>
+        </div>
+        <div class="section">
+            <div class="section-title">Sujet cadré</div>
+            <textarea id="sujetCadre" placeholder="Le sujet cadré apparaîtra ici..."></textarea>
+        </div>
+        <div class="section">
+            <div class="section-title">Réflexions</div>
+            <div class="subsection">
+                <div>Faits</div>
+                <div id="faitsContainer"></div>
+                <button id="addFaitBtn" class="hidden">+ Ajouter un fait</button>
+            </div>
+            <div class="subsection">
+                <div>Problématiques</div>
+                <div id="problematiquesContainer"></div>
+                <button id="addProblematiqueBtn" class="hidden">+ Ajouter une problématique</button>
+            </div>
+            <div class="subsection">
+                <div>Idées</div>
+                <div id="ideesContainer"></div>
+                <button id="addIdeeBtn" class="hidden">+ Ajouter une idée</button>
+            </div>
+        </div>
+        <div class="section">
+            <div class="section-title">Plan</div>
+            <div>
+                <div>Accroche</div>
+                <textarea id="accroche" placeholder="L'accroche apparaîtra ici..."></textarea>
+            </div>
+            <div>
+                <div>Idée maîtresse</div>
+                <textarea id="ideeMaitresse" placeholder="L'idée maîtresse apparaîtra ici..."></textarea>
+            </div>
+            <div>
+                <div>Idées directrices</div>
+                <div id="ideesDirectricesContainer"></div>
+                <button id="addIdeeDirectriceBtn" class="hidden">+ Ajouter une idée directrice</button>
+            </div>
+            <div>
+                <div>Ouverture</div>
+                <textarea id="ouverture" placeholder="L'ouverture apparaîtra ici..."></textarea>
+            </div>
+        </div>
+        <div class="section">
+            <div class="section-title">Composition</div>
+            <textarea id="composition" placeholder="La composition apparaîtra ici..."></textarea>
+        </div>
+        <div class="prompt-section section">
+            <div class="section-title">Prompts</div>
+            <div>
+                <div>Début de prompt pour compléter le JSON</div>
+                <textarea id="basePrompt" readonly>Vous assistez un rédacteur dans la création d’une composition en 4 étapes. Votre mission est de compléter une seule propriété de premier niveau du JSON fourni, sans modifier les autres.
+Les 5 top-level properties du JSON sont : sujet, sujet cadré, réflexions, plan, composition.
+Les 4 étapes sont : cadrage du sujet, réflexion, planification, rédaction.
+Consignes absolues :
+    Conservez la structure JSON existante dans son intégralité (clés, valeurs, ordre).
+    Ne complétez que la propriété de premier niveau liée à l’étape demandée.
+Format strict :
+    Pas de mise en forme dans le texte généré (pas de Markdown, pas de sauts de ligne inutiles).
+    Respectez les types de données existants (string, array, object).
+    Ne supprimez ni ne modifiez les autres propriétés.</textarea>
+            </div>
+            <div>
+                <div>Continuation du prompt pour l'étape 1</div>
+                <textarea id="step1Prompt" readonly>Etape 1 : Cadrage du sujet
+Input : sujet
+Output : sujet cadré
+Objectif :
+L'objectif est de reformuler le sujet en ayant bien identifié de quoi il s'agit et de comprendre le cadre applicable qui peut être sous-entendu. Le sujet cadré doit :
+- préciser le domaine et le cadre général ;
+- reformuler afin de clarifier le sens des mots si plusieurs interprétations sont possibles (lever l'ambiguïté des termes polysémiques) ;
+- définir les limites géographiques, temporelles, et thématiques.
+Contraintes : Conserver la structure syntaxique du sujet original (interrogative ou affirmative).
+Eviter tout détour énonciatif.
+Longueur d'une phrase ou deux.
+Format : Respecter strictement le format JSON pour la propriété "sujet cadré" (texte brut).</textarea>
+            </div>
+            <div>
+                <div>Continuation du prompt pour l'étape 2</div>
+                <textarea id="step2Prompt" readonly>Etape 2 : Réflexion
+Input : sujet, sujet cadré
+Output : réflexions
+Objectif : L'étape de réflexion a pour but de lister des faits, des problématiques et des idées en lien avec le sujet.
+Les faits ne doivent refléter que la réalité et ne pas intégrer de biais ou de parti pris. Ils doivent être datés, localisés et chiffrés dans la mesure du possible. Des citations célèbres peuvent être insérées dans cette liste. La rédaction étant en français, la répartition entre faits français et étranger doit être approximativement de 50 %. Les exemples étrangers doivent balayer une large part du reste du monde, sans exclure aucune grande région ou grande époque de l'Histoire. La liste de faits doit comprendre au moins 20 éléments.
+Les problématiques permettent par les questions posées d'élargir le champ de réflexion en questionnant chaque aspect du sujet, en variant le lieu ou l'époque, l'angle sous lequel il est abordé, en questionnant les intérêts des autres acteurs, les causes et les conséquences des faits, et en mettant en lumière les enjeux. La liste de problématiques doit comprendre au moins 12 éléments.
+Les idées élémentaires permettent de proposer des idées liées au sujet dont l'ampleur va de l'idée secondaire à l'idée maîtresse. La certitude des idées doit pouvoir aller de l'affirmation établie aux hypothèses crédibles (débattue mais étayées), mais sans jamais aller du côté des affirmations indémontrables ou des avis purement personnels. Il faut inclure des idées créatives ou originales. Il n'y a pas de contrainte sur la cohérence globale entre les idées, tant que chaque idée est individuellement argumentable.
+La liste d'idées élémentaires doit comprendre au moins 20 éléments.
+Format : Suivre strictement le format JSON de la top-level property réflexions composé de trois arrays de texte.</textarea>
+            </div>
+            <div>
+                <div>Continuation du prompt pour l'étape 3</div>
+                <textarea id="step3Prompt" readonly>Etape 3 : Planification
+Input : sujet, sujet cadré, réflexions
+Output : plan
+Objectif : L'étape de planification, ou de réalisation du plan détaillé doit permettre de hiérarchiser les idées pour en dégager une idée maîtresse qui sera appuyée par des idées directrices, elles-mêmes soutenues par des idées secondaires qui seront illustrées par des exemples. C'est aussi l'occasion de choisir une accroche et une ouverture. Le cheminement des idées doit être logique. Le plan est composé de plusieurs parties, entre 2 et 4, chacune soutenant une idée directrice. Chaque partie est décomposée en plusieurs idées secondaires, de 2 à 4 idées secondaires. Chaque idée secondaire est illustrée par au moins un exemple.
+L'accroche doit éveiller la curiosité en s'appuyant sur un fait saillant ou une citation en lien avec l'idée maîtresse.
+L'ouverture doit permettre de s'interroger sur un autre aspect connexe, non traité dans le développement, sans repartir sur un nouveau sujet.
+Contraintes :
+Ordonner les idées selon une progression logique (chronologique, thématique, causale, etc.) pour assurer fluidité et transitions naturelles.
+Equilibrer entre les parties. Chaque partie est sémantiquement orthogonale aux autres sur au moins un aspect majeur tout en restant cohérente avec l'idée maîtresse.
+Ne pas numéroter les idées.
+Un exemple par idée secondaire.
+Reprendre au moins la moitié des idées et la moitié des exemples formulées dans réflexions.
+Format : Suivre strictement le format JSON de la top-level property plan.</textarea>
+            </div>
+            <div>
+                <div>Continuation du prompt pour l'étape 4</div>
+                <textarea id="step4Prompt" readonly>Etape 4 : Rédaction
+Input : sujet, sujet cadré, réflexions, plan
+Output : composition
+Objectif : Rédiger la composition.
+La structure de la composition, tel que l'introduction, le développement et ses parties, et la conclusion transparait grâce aux paragraphes et aux retours à la ligne.
+L'introduction comprend une accroche, le sujet reformulé, l'idée maîtresse, et l'annonce du plan. L'introduction forme un paragraphe.
+Le développement comprend 2 à 4 parties, autant que d'idées directrices. Chaque partie commence par l'énoncé de l'idée directrice, un développement de partie et une transition. Le développement de partie comprend 2 à 4 idées secondaires étayées par leur exemple. Le développement comprend plusieurs paragraphes, autant que de partie. Dans le paragraphe que forme chaque partie, un retour à la ligne permet de marquer le début de chaque idée secondaire.
+La conclusion comprend un résumé de l'argumentation, la réponse à la question posée ou un résumé de l'idée maîtresse et une ouverture. La conclusion forme un paragraphe.
+Contraintes :
+Le style doit être clair et épuré. Le vocabulaire doit être riche et utilisé précisément. La complexité syntaxique ne doit servir que pour mieux exprimer des idées complexes.
+Format : Suivre strictement le format JSON de la top-level property composition qui est un simple texte. La forme de la composition n'est donc que du texte. La composition fait 1000 mots. Les sauts de ligne doivent être échappés (\n).</textarea>
+            </div>
+        </div>
+        <div class="debug section">
+            <div class="debug-title">Dernier message envoyé :</div>
+            <div id="lastSent" class="debug-content"></div>
+            <div class="debug-title">Dernier message reçu :</div>
+            <div id="lastReceived" class="debug-content"></div>
+        </div>
+    </div>
+    <script>
+        // Structure de données initiale
+        let compositionData = {
+            "sujet": "",
+            "sujet cadré": "",
+            "réflexions": {
+                "faits": [""],
+                "problématiques": [""],
+                "idées": [""]
+            },
+            "plan": {
+                "accroche": "",
+                "idée maîtresse": "",
+                "idées directrices": [
+                    {
+                        "ID": "",
+                        "idées secondaires": [
+                            { "IS": "", "exemple": "" }
+                        ]
+                    }
+                ],
+                "ouverture": ""
+            },
+            "composition": ""
+        };
+        // États des boutons
+        const buttonStates = {
+            NOT_AVAILABLE: 0,
+            READY: 1,
+            LOADING: 2,
+            DONE: 3
+        };
+        // DOM Elements
+        const sujetInput = document.getElementById('sujet');
+        const sujetCadreInput = document.getElementById('sujetCadre');
+        const accrocheInput = document.getElementById('accroche');
+        const ideeMaitresseInput = document.getElementById('ideeMaitresse');
+        const ouvertureInput = document.getElementById('ouverture');
+        const compositionInput = document.getElementById('composition');
+        const factsContainer = document.getElementById('faitsContainer');
+        const problematiquesContainer = document.getElementById('problematiquesContainer');
+        const ideesContainer = document.getElementById('ideesContainer');
+        const ideesDirectricesContainer = document.getElementById('ideesDirectricesContainer');
+        const addFaitBtn = document.getElementById('addFaitBtn');
+        const addProblematiqueBtn = document.getElementById('addProblematiqueBtn');
+        const addIdeeBtn = document.getElementById('addIdeeBtn');
+        const addIdeeDirectriceBtn = document.getElementById('addIdeeDirectriceBtn');
+        const importBtn = document.getElementById('importBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        const step1Btn = document.getElementById('step1Btn');
+        const step2Btn = document.getElementById('step2Btn');
+        const step3Btn = document.getElementById('step3Btn');
+        const step4Btn = document.getElementById('step4Btn');
+        const magicBtn = document.getElementById('magicBtn');
+        const lastSentDiv = document.getElementById('lastSent');
+        const lastReceivedDiv = document.getElementById('lastReceived');
+        const basePrompt = document.getElementById('basePrompt');
+        const step1Prompt = document.getElementById('step1Prompt');
+        const step2Prompt = document.getElementById('step2Prompt');
+        const step3Prompt = document.getElementById('step3Prompt');
+        const step4Prompt = document.getElementById('step4Prompt');
+
+        // Fonction pour ajuster la hauteur des textarea
+        function autoResize(textarea) {
+            textarea.style.height = '1.1em';
+            textarea.style.height = (textarea.scrollHeight) + 'px';
+        }
+
+        // Initialisation
+        function init() {
+            renderFaits();
+            renderProblematiques();
+            renderIdees();
+            renderIdeesDirectrices();
+            updateButtonStates();
+            setupEventListeners();
+            // Appliquer autoResize à tous les textarea existants
+            document.querySelectorAll('textarea').forEach(textarea => {
+                autoResize(textarea);
+            });
+        }
+
+        // Rendu des sections dynamiques
+        function renderFaits() {
+            factsContainer.innerHTML = '';
+            compositionData.réflexions.faits.forEach((fait, index) => {
+                const div = document.createElement('div');
+                div.className = 'array-item';
+                div.innerHTML = `
+                    <textarea placeholder="Fait ${index + 1}">${fait}</textarea>
+                    <button class="remove-btn" data-index="${index}">×</button>
+                `;
+                factsContainer.appendChild(div);
+                const textarea = div.querySelector('textarea');
+                autoResize(textarea);
+                textarea.addEventListener('input', () => autoResize(textarea));
+            });
+            addFaitBtn.classList.toggle('hidden', compositionData.réflexions.faits.length === 0);
+        }
+
+        function renderProblematiques() {
+            problematiquesContainer.innerHTML = '';
+            compositionData.réflexions.problématiques.forEach((pb, index) => {
+                const div = document.createElement('div');
+                div.className = 'array-item';
+                div.innerHTML = `
+                    <textarea placeholder="Problématique ${index + 1}">${pb}</textarea>
+                    <button class="remove-btn" data-index="${index}">×</button>
+                `;
+                problematiquesContainer.appendChild(div);
+                const textarea = div.querySelector('textarea');
+                autoResize(textarea);
+                textarea.addEventListener('input', () => autoResize(textarea));
+            });
+            addProblematiqueBtn.classList.toggle('hidden', compositionData.réflexions.problématiques.length === 0);
+        }
+
+        function renderIdees() {
+            ideesContainer.innerHTML = '';
+            compositionData.réflexions.idées.forEach((idee, index) => {
+                const div = document.createElement('div');
+                div.className = 'array-item';
+                div.innerHTML = `
+                    <textarea placeholder="Idée ${index + 1}">${idee}</textarea>
+                    <button class="remove-btn" data-index="${index}">×</button>
+                `;
+                ideesContainer.appendChild(div);
+                const textarea = div.querySelector('textarea');
+                autoResize(textarea);
+                textarea.addEventListener('input', () => autoResize(textarea));
+            });
+            addIdeeBtn.classList.toggle('hidden', compositionData.réflexions.idées.length === 0);
+        }
+
+        function renderIdeesDirectrices() {
+            ideesDirectricesContainer.innerHTML = '';
+            compositionData.plan['idées directrices'].forEach((id, idIndex) => {
+                const idDiv = document.createElement('div');
+                idDiv.className = 'section';
+                idDiv.style.marginBottom = '15px';
+                idDiv.innerHTML = `
+                    <div>Idée directrice ${idIndex + 1}</div>
+                    <textarea placeholder="Idée directrice">${id.ID}</textarea>
+                    <div style="margin-top: 10px;">
+                        <div>Idées secondaires</div>
+                        <div id="ideesSecondaires-${idIndex}"></div>
+                        <button class="add-is-btn" data-id-index="${idIndex}">+ Ajouter une idée secondaire</button>
+                    </div>
+                    <button class="remove-btn" data-id-index="${idIndex}" style="margin-top: 10px;">× Supprimer cette idée directrice</button>
+                `;
+                ideesDirectricesContainer.appendChild(idDiv);
+                const idTextarea = idDiv.querySelector('textarea');
+                autoResize(idTextarea);
+                idTextarea.addEventListener('input', () => autoResize(idTextarea));
+
+                const isContainer = idDiv.querySelector(`#ideesSecondaires-${idIndex}`);
+                id['idées secondaires'].forEach((is, isIndex) => {
+                    const isDiv = document.createElement('div');
+                    isDiv.className = 'array-item';
+                    isDiv.style.marginTop = '5px';
+                    isDiv.innerHTML = `
+                        <div style="flex: 1;">
+                            <textarea placeholder="Idée secondaire ${isIndex + 1}">${is.IS}</textarea>
+                            <textarea placeholder="Exemple ${isIndex + 1}" style="margin-top: 5px;">${is.exemple}</textarea>
+                        </div>
+                        <button class="remove-is-btn" data-id-index="${idIndex}" data-is-index="${isIndex}">×</button>
+                    `;
+                    isContainer.appendChild(isDiv);
+                    const isTextareas = isDiv.querySelectorAll('textarea');
+                    isTextareas.forEach(textarea => {
+                        autoResize(textarea);
+                        textarea.addEventListener('input', () => autoResize(textarea));
+                    });
+                });
+            });
+            addIdeeDirectriceBtn.classList.toggle('hidden', compositionData.plan['idées directrices'].length === 0);
+        }
+
+        // Gestion des états des boutons
+        function updateButtonStates() {
+            const hasSujet = compositionData.sujet.trim() !== '';
+            const hasSujetCadre = compositionData['sujet cadré'].trim() !== '';
+            const hasReflexions = compositionData.réflexions.faits.some(f => f.trim() !== '') ||
+                                 compositionData.réflexions.problématiques.some(p => p.trim() !== '') ||
+                                 compositionData.réflexions.idées.some(i => i.trim() !== '');
+            const hasPlan = compositionData.plan.accroche.trim() !== '' ||
+                           compositionData.plan['idée maîtresse'].trim() !== '' ||
+                           compositionData.plan['idées directrices'].some(id => id.ID.trim() !== '');
+            // Étape 1
+            step1Btn.disabled = !hasSujet;
+            step1Btn.classList.remove('done');
+            step1Btn.classList.remove('loading');
+            // Étape 2
+            step2Btn.disabled = !hasSujetCadre;
+            step2Btn.classList.remove('done');
+            step2Btn.classList.remove('loading');
+            // Étape 3
+            step3Btn.disabled = !hasReflexions;
+            step3Btn.classList.remove('done');
+            step3Btn.classList.remove('loading');
+            // Étape 4
+            step4Btn.disabled = !hasPlan;
+            step4Btn.classList.remove('done');
+            step4Btn.classList.remove('loading');
+            // Bouton magique
+            magicBtn.disabled = !hasSujet;
+        }
+
+        // Événements
+        function setupEventListeners() {
+            // Champs texte
+            sujetInput.addEventListener('input', (e) => {
+                compositionData.sujet = e.target.value;
+                autoResize(e.target);
+                updateButtonStates();
+            });
+            sujetCadreInput.addEventListener('input', (e) => {
+                compositionData['sujet cadré'] = e.target.value;
+                autoResize(e.target);
+                updateButtonStates();
+            });
+            accrocheInput.addEventListener('input', (e) => {
+                compositionData.plan.accroche = e.target.value;
+                autoResize(e.target);
+                updateButtonStates();
+            });
+            ideeMaitresseInput.addEventListener('input', (e) => {
+                compositionData.plan['idée maîtresse'] = e.target.value;
+                autoResize(e.target);
+                updateButtonStates();
+            });
+            ouvertureInput.addEventListener('input', (e) => {
+                compositionData.plan.ouverture = e.target.value;
+                autoResize(e.target);
+                updateButtonStates();
+            });
+            compositionInput.addEventListener('input', (e) => {
+                compositionData.composition = e.target.value;
+                autoResize(e.target);
+            });
+
+            // Ajout/suppression de faits
+            addFaitBtn.addEventListener('click', () => {
+                compositionData.réflexions.faits.push("");
+                renderFaits();
+            });
+            factsContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-btn')) {
+                    const index = parseInt(e.target.getAttribute('data-index'));
+                    compositionData.réflexions.faits.splice(index, 1);
+                    renderFaits();
+                }
+            });
+            factsContainer.addEventListener('input', (e) => {
+                if (e.target.tagName === 'TEXTAREA') {
+                    const index = Array.from(factsContainer.children).indexOf(e.target.parentElement);
+                    compositionData.réflexions.faits[index] = e.target.value;
+                }
+            });
+
+            // Ajout/suppression de problématiques
+            addProblematiqueBtn.addEventListener('click', () => {
+                compositionData.réflexions.problématiques.push("");
+                renderProblematiques();
+            });
+            problematiquesContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-btn')) {
+                    const index = parseInt(e.target.getAttribute('data-index'));
+                    compositionData.réflexions.problématiques.splice(index, 1);
+                    renderProblematiques();
+                }
+            });
+            problematiquesContainer.addEventListener('input', (e) => {
+                if (e.target.tagName === 'TEXTAREA') {
+                    const index = Array.from(problematiquesContainer.children).indexOf(e.target.parentElement);
+                    compositionData.réflexions.problématiques[index] = e.target.value;
+                }
+            });
+
+            // Ajout/suppression d'idées
+            addIdeeBtn.addEventListener('click', () => {
+                compositionData.réflexions.idées.push("");
+                renderIdees();
+            });
+            ideesContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-btn')) {
+                    const index = parseInt(e.target.getAttribute('data-index'));
+                    compositionData.réflexions.idées.splice(index, 1);
+                    renderIdees();
+                }
+            });
+            ideesContainer.addEventListener('input', (e) => {
+                if (e.target.tagName === 'TEXTAREA') {
+                    const index = Array.from(ideesContainer.children).indexOf(e.target.parentElement);
+                    compositionData.réflexions.idées[index] = e.target.value;
+                }
+            });
+
+            // Ajout/suppression d'idées directrices
+            addIdeeDirectriceBtn.addEventListener('click', () => {
+                compositionData.plan['idées directrices'].push({
+                    "ID": "",
+                    "idées secondaires": [{ "IS": "", "exemple": "" }]
+                });
+                renderIdeesDirectrices();
+                updateButtonStates();
+            });
+            ideesDirectricesContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-btn')) {
+                    const idIndex = parseInt(e.target.getAttribute('data-id-index'));
+                    compositionData.plan['idées directrices'].splice(idIndex, 1);
+                    renderIdeesDirectrices();
+                    updateButtonStates();
+                } else if (e.target.classList.contains('add-is-btn')) {
+                    const idIndex = parseInt(e.target.getAttribute('data-id-index'));
+                    compositionData.plan['idées directrices'][idIndex]['idées secondaires'].push({ "IS": "", "exemple": "" });
+                    renderIdeesDirectrices();
+                } else if (e.target.classList.contains('remove-is-btn')) {
+                    const idIndex = parseInt(e.target.getAttribute('data-id-index'));
+                    const isIndex = parseInt(e.target.getAttribute('data-is-index'));
+                    compositionData.plan['idées directrices'][idIndex]['idées secondaires'].splice(isIndex, 1);
+                    renderIdeesDirectrices();
+                }
+            });
+            ideesDirectricesContainer.addEventListener('input', (e) => {
+                if (e.target.tagName === 'TEXTAREA') {
+                    const idDiv = e.target.closest('.section');
+                    const idIndex = Array.from(ideesDirectricesContainer.children).indexOf(idDiv);
+                    const isDiv = e.target.closest('.array-item');
+                    if (isDiv) {
+                        const isIndex = Array.from(idDiv.querySelectorAll('.array-item')).indexOf(isDiv);
+                        const textareaIndex = Array.from(isDiv.querySelectorAll('textarea')).indexOf(e.target);
+                        if (textareaIndex === 0) {
+                            compositionData.plan['idées directrices'][idIndex]['idées secondaires'][isIndex].IS = e.target.value;
+                        } else {
+                            compositionData.plan['idées directrices'][idIndex]['idées secondaires'][isIndex].exemple = e.target.value;
+                        }
+                    } else if (e.target.closest('.section') && e.target.tagName === 'TEXTAREA') {
+                        compositionData.plan['idées directrices'][idIndex].ID = e.target.value;
+                    }
+                }
+            });
+
+            // Boutons d'import/export
+            importBtn.addEventListener('click', () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const data = JSON.parse(event.target.result);
+                            compositionData = data;
+                            refreshUI();
+                            updateButtonStates();
+                        } catch (err) {
+                            alert("Erreur lors de l'import du fichier JSON.");
+                        }
+                    };
+                    reader.readAsText(file);
+                };
+                input.click();
+            });
+            exportBtn.addEventListener('click', () => {
+                const dataStr = JSON.stringify(compositionData, null, 2);
+                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                const exportFileDefaultName = 'composition.json';
+                const linkElement = document.createElement('a');
+                linkElement.setAttribute('href', dataUri);
+                linkElement.setAttribute('download', exportFileDefaultName);
+                linkElement.click();
+            });
+
+            // Raccourcis clavier
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey) {
+                    switch (e.key) {
+                        case 'e':
+                            e.preventDefault();
+                            exportBtn.click();
+                            break;
+                        case 'i':
+                            e.preventDefault();
+                            importBtn.click();
+                            break;
+                        case '1':
+                            e.preventDefault();
+                            if (!step1Btn.disabled) step1Btn.click();
+                            break;
+                        case '2':
+                            e.preventDefault();
+                            if (!step2Btn.disabled) step2Btn.click();
+                            break;
+                        case '3':
+                            e.preventDefault();
+                            if (!step3Btn.disabled) step3Btn.click();
+                            break;
+                        case '4':
+                            e.preventDefault();
+                            if (!step4Btn.disabled) step4Btn.click();
+                            break;
+                    }
+                }
+            });
+
+            // Boutons d'étapes
+            step1Btn.addEventListener('click', () => runStep(1));
+            step2Btn.addEventListener('click', () => runStep(2));
+            step3Btn.addEventListener('click', () => runStep(3));
+            step4Btn.addEventListener('click', () => runStep(4));
+
+            // Bouton magique
+            magicBtn.addEventListener('click', async () => {
+                magicBtn.disabled = true;
+                magicBtn.classList.add('loading');
+                try {
+                    for (let i = 1; i <= 4; i++) {
+                        await runStep(i, true);
+                    }
+                } catch (err) {
+                    console.error("Erreur lors de l'exécution magique:", err);
+                } finally {
+                    magicBtn.disabled = false;
+                    magicBtn.classList.remove('loading');
+                }
+            });
+        }
+
+        // Exécution d'une étape
+        async function runStep(step, isMagic = false) {
+            let button, promptTextarea;
+            switch (step) {
+                case 1:
+                    button = step1Btn;
+                    promptTextarea = step1Prompt;
+                    break;
+                case 2:
+                    button = step2Btn;
+                    promptTextarea = step2Prompt;
+                    break;
+                case 3:
+                    button = step3Btn;
+                    promptTextarea = step3Prompt;
+                    break;
+                case 4:
+                    button = step4Btn;
+                    promptTextarea = step4Prompt;
+                    break;
+            }
+            if (!button || button.disabled) return;
+            button.disabled = true;
+            button.classList.add('loading');
+            try {
+                // Préparation du prompt
+                const prompt = `${basePrompt.value}\n\n${promptTextarea.value}\n\nJSON actuel:\n${JSON.stringify(compositionData, null, 2)}`;
+                lastSentDiv.textContent = prompt;
+                // Appel API
+                const response = await fetch('http://localhost:3000/api/prompt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ prompt })
+                });
+                if (!response.ok) {
+                    throw new Error(`Erreur HTTP : ${response.status}`);
+                }
+                const data = await response.json();
+                let responseContent = data.choices[0].message.content;
+                // Extraction du JSON de la réponse
+                let jsonResponse;
+                if (responseContent.startsWith('```json')) {
+                    responseContent = responseContent.substring(7, responseContent.lastIndexOf('```')).trim();
+                }
+                jsonResponse = JSON.parse(responseContent);
+                // Mise à jour des données
+                for (const key in jsonResponse) {
+                    if (compositionData.hasOwnProperty(key)) {
+                        compositionData[key] = jsonResponse[key];
+                    }
+                }
+                lastReceivedDiv.textContent = JSON.stringify(jsonResponse, null, 2);
+                refreshUI();
+                updateButtonStates();
+                if (!isMagic) {
+                    button.classList.remove('loading');
+                    button.classList.add('done');
+                }
+            } catch (err) {
+                console.error("Erreur lors de l'appel API:", err);
+                lastReceivedDiv.textContent = `Erreur: ${err.message}`;
+                if (!isMagic) {
+                    button.classList.remove('loading');
+                }
+            } finally {
+                if (!isMagic) {
+                    button.disabled = false;
+                }
+            }
+        }
+
+        // Rafraîchir l'UI à partir des données
+        function refreshUI() {
+            sujetInput.value = compositionData.sujet;
+            sujetCadreInput.value = compositionData['sujet cadré'];
+            accrocheInput.value = compositionData.plan.accroche;
+            ideeMaitresseInput.value = compositionData.plan['idée maîtresse'];
+            ouvertureInput.value = compositionData.plan.ouverture;
+            compositionInput.value = compositionData.composition;
+            autoResize(sujetInput);
+            autoResize(sujetCadreInput);
+            autoResize(accrocheInput);
+            autoResize(ideeMaitresseInput);
+            autoResize(ouvertureInput);
+            autoResize(compositionInput);
+            renderFaits();
+            renderProblematiques();
+            renderIdees();
+            renderIdeesDirectrices();
+        }
+
+        // Démarrage
+        init();
+    </script>
+</body>
+</html>
