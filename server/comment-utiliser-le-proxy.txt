@@ -1,0 +1,11 @@
+Dans ce dossier, au préalable,
+
+-	il faut mettre sa clé dans le fichier : cle-mistral-ai.txt
+-	il faut choisir le modèle à utiliser dans le fichier : model-mistral-ai.txt
+
+Puis à partir du terminal windows, lancer le serveur :
+
+node server.js
+
+Pour arrêter le server : ctrl + C
+
